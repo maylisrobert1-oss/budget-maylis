@@ -138,11 +138,14 @@
     return null;
   }
 
+  const ABONNEMENTS = /AMAZON PRIME|PRIME VIDEO|NETFLIX|SPOTIFY|DEEZER|DISNEY ?PLUS|CANAL ?\+|APPLE\.COM|YOUTUBE ?PREMIUM|AUDIBLE/;
   // Règles valables pour tout compte Boursobank
   function regleGenerique(o) {
     const L = norm(o.libelle).toUpperCase(), m = o.montant;
     if (/LIVRET|VIREMENT DEPUIS BOURSOBANK|TRADE REPUBLIC/.test(L)) return 'epargne';
     if (/^RETRAIT DAB/.test(L)) return 'especes';
+    // Abonnements : reconnus au libellé, car le même marchand peut aussi vendre des achats (Amazon Prime / Amazon)
+    if (m < 0 && ABONNEMENTS.test(L)) return 'abonnements';
     if (m > 0 && /CPAM|CAMIEG|MUTUELLE/.test(L)) return 'sante';
     const dev = L.match(/ \d+,\d+ ([A-Z]{3}) CB\*/);
     if (dev && dev[1] !== 'EUR') return 'voyages';
@@ -284,26 +287,56 @@
       return l.reverse();
     };
     const revenusRef = r2((Number(R.salaire_ref) || 0) + somme((R.aides || []).map((a) => Number(a.montant) || 0)));
-    const pct = (v) => (revenusRef > 0 ? v / revenusRef : 0);
+
+    // Répartition réelle sur une liste de mois terminés (moyenne), sur les vrais revenus.
+    // Règle unique pour tout l'appli : les revenus ponctuels (« Autre revenu ») ne comptent pas, ils ne reviennent pas chaque mois ;
+    // les enveloppes comptent pour ce qui a été dépensé dans le mois.
+    const ids = (l, g) => l.filter((p) => !g || p.groupe === g).map((p) => p.id);
+    const repartition = (liste) => {
+      const moy = (l) => (liste.length ? r2(somme(liste.map((m) => somme(l.map((id) => dep(m, id))))) / liste.length) : 0);
+      const x = {
+        mois: liste,
+        revenus: -moy(REVENUS.filter((p) => p.id !== 'revenu_autre').map((p) => p.id)),
+        salaire: -moy(['salaire']),
+        fixes: moy((bundle.fixes || []).map((f) => f.id)),
+        obligations_var: moy(ids(VARIABLES, 'obligations')), plaisir_var: moy(ids(VARIABLES, 'plaisir')),
+        env_obligations: moy(ids(ENVELOPPES, 'obligations')), env_plaisir: moy(ids(ENVELOPPES, 'plaisir'))
+      };
+      x.enveloppes = r2(x.env_obligations + x.env_plaisir);
+      x.obligations = r2(x.fixes + x.obligations_var + x.env_obligations);
+      x.plaisir = r2(x.plaisir_var + x.env_plaisir);
+      x.depenses = r2(x.obligations + x.plaisir);
+      x.epargne = r2(x.revenus - x.depenses);
+      const pr = (v) => (x.revenus > 0 ? v / x.revenus : 0);
+      x.pct = { obligations: pr(x.obligations), plaisir: pr(x.plaisir), epargne: pr(x.epargne), fixes: pr(x.fixes), obligations_var: pr(x.obligations_var), plaisir_var: pr(x.plaisir_var), enveloppes: pr(x.enveloppes) };
+      return x;
+    };
+    // Moyenne : les mêmes mois que les objectifs ; mois dernier : le dernier mois terminé
+    const reel = repartition(moisFenetre(R.objectifs_depuis));
+    const mPrec = moisDecale(mc, -1);
+    const dernier = mPrec >= premierComplet ? Object.assign(repartition([mPrec]), { debut: debutMois(mPrec, j0), fin: finMois(mPrec, j0) }) : null;
+    // Une seule base pour tous les % de l'appli : les revenus réels moyens (sinon les revenus de référence)
+    const revBase = reel.mois.length && reel.revenus > 0 ? reel.revenus : revenusRef;
+    const pct = (v) => (revBase > 0 ? v / revBase : 0);
 
     // Objectifs des postes du mois : moyenne glissante des mois terminés.
     // Sans mois terminé dans la fenêtre (poste qui vient de changer), on part du montant de départ convenu.
     const depart = bundle.objectifs_depart || {};
-    // Un % saisi à la main (part des revenus de référence) remplace la moyenne glissante
+    // Un % saisi à la main (part des revenus réels moyens) remplace la moyenne glissante
     const manuels = bundle.objectifs_manuels || {};
     const manuel = (id) => (manuels[id] !== undefined && manuels[id] !== null && isFinite(Number(manuels[id])) ? Number(manuels[id]) : null);
     const objectifDe = (p) => {
       const l = moisFenetre([R.objectifs_depuis, fenetres[p.id]].filter(Boolean).sort().pop());
       const auto = l.length ? Math.max(0, somme(l.map((m) => dep(m, p.id))) / l.length) : Number(depart[p.id]) || 0;
       const m = manuel(p.id);
-      return { objectif: r2(m !== null ? m * revenusRef : auto), auto: r2(auto), manuel: m !== null, mois: l, depart: !l.length && depart[p.id] !== undefined };
+      return { objectif: r2(m !== null ? m * revBase : auto), auto: r2(auto), manuel: m !== null, mois: l, depart: !l.length && depart[p.id] !== undefined };
     };
     // Enveloppes : moyenne mensuelle des 12 derniers mois (sans plafond), ou % saisi à la main
     const parMoisEnv = (p) => {
       const l = moisFenetre(fenetres[p.id]);
       const auto = l.length ? r2(Math.max(0, somme(l.map((m) => dep(m, p.id))) / l.length)) : 0;
       const m = manuel(p.id);
-      return { par_mois: m !== null ? r2(m * revenusRef) : auto, auto, manuel: m !== null, mois: l };
+      return { par_mois: m !== null ? r2(m * revBase) : auto, auto, manuel: m !== null, mois: l };
     };
 
     const fixes = (bundle.fixes || []).map((f) => {
@@ -341,8 +374,16 @@
     };
     plan.pct = { obligations: pct(plan.obligations), plaisir: pct(plan.plaisir), epargne: pct(epargnePlan), fixes: pct(F), obligations_var: pct(oblVar), plaisir_var: pct(plaisirVar), enveloppes: pct(E) };
 
+    // Base des projections et de « Dans la durée » : la moyenne réelle (ou le budget de référence sans mois terminé)
+    const base = reel.mois.length
+      ? { revenus: reel.revenus, depenses: reel.depenses, epargne: reel.epargne, plaisir_var: reel.plaisir_var, salaire: reel.salaire > 0 ? reel.salaire : Number(R.salaire_ref) || 0, reel: true }
+      : { revenus: revenusRef, depenses: plan.depenses, epargne: plan.epargne, plaisir_var: plan.plaisir_var, salaire: Number(R.salaire_ref) || 0, reel: false };
+    base.pct_epargne = base.revenus > 0 ? base.epargne / base.revenus : 0;
+
     // Mois en cours
     const resteBudget = r2(somme(variables.map((v) => Math.max(0, v.reste))));
+    // Ce qui reste à l'échelle du mois : budget total moins tout le dépensé (un dépassement sur un poste réduit le reste)
+    const resteNet = r2(Math.max(0, somme(variables.map((v) => v.objectif)) - somme(variables.map((v) => v.depense))));
     const joursRestants = Math.max(1, nbJours - ecoules);
     const salaireRecu = r2(-dep(mc, 'salaire'));
     const surplus = salaireRecu > 0 ? r2(salaireRecu - (Number(R.salaire_ref) || 0)) : 0;
@@ -355,12 +396,16 @@
     // Enveloppes : pas de réserve qui se cumule ; ce qui est dépensé ce mois-ci (ou la part prévue, au prorata des jours restants) sort de l'épargne
     const attenduEnv = (e) => e.depense_mois + Math.max(0, e.par_mois - e.depense_mois) * fracRestante;
     const envMois = r2(somme(enveloppes.map(attenduEnv)));
-    const epargneMois = r2(revenusRef + surplus - fixesMois - varMois - envMois);
+    // Revenus du mois : ce qui est vraiment arrivé (hors revenus exceptionnels) ; tant que la paie ou l'aide n'est pas arrivée, le montant de référence
+    const aidesRef = somme((R.aides || []).map((a) => Number(a.montant) || 0)), aidesRecues = r2(-dep(mc, 'aides'));
+    const revMois = r2((salaireRecu > 0 ? salaireRecu : Number(R.salaire_ref) || 0) + (aidesRecues > 0 ? aidesRecues : aidesRef) + Math.max(0, -dep(mc, 'caf')));
+    const epargneMois = r2(revMois - fixesMois - varMois - envMois);
+    const pm = (v) => (revMois > 0 ? v / revMois : 0);
     const depenseMois = r2(somme(variables.map((v) => v.depense)));
     const repartMois = {
-      obligations: pct(fixesMois + somme(variables.filter((v) => v.groupe === 'obligations').map(attendu)) + somme(enveloppes.filter((e) => e.groupe === 'obligations').map(attenduEnv))),
-      plaisir: pct(somme(variables.filter((v) => v.groupe === 'plaisir').map(attendu)) + somme(enveloppes.filter((e) => e.groupe === 'plaisir').map(attenduEnv))),
-      epargne: revenusRef > 0 ? epargneMois / revenusRef : 0
+      obligations: pm(fixesMois + somme(variables.filter((v) => v.groupe === 'obligations').map(attendu)) + somme(enveloppes.filter((e) => e.groupe === 'obligations').map(attenduEnv))),
+      plaisir: pm(somme(variables.filter((v) => v.groupe === 'plaisir').map(attendu)) + somme(enveloppes.filter((e) => e.groupe === 'plaisir').map(attenduEnv))),
+      epargne: pm(epargneMois)
     };
 
     // Compte courant : solde estimé la veille du prochain 1er du mois, avant le loyer
@@ -384,7 +429,8 @@
     const flux = (compteId, apres) => r2(-somme(ops.filter((o) => o.poste === 'epargne' && o.date > apres && ((compteId === 'pea') === /TRADE REPUBLIC/i.test(o.libelle))).map((o) => Number(o.montant))));
     const livrets = Ep.livrets ? r2(Number(Ep.livrets.valeur) + flux('livrets', Ep.livrets.date)) : null;
     const pea = Ep.pea ? r2(Number(Ep.pea.valeur) + flux('pea', Ep.pea.date)) : null;
-    const reserve = plan.depenses > 0 && livrets !== null ? Math.round(livrets / plan.depenses * 10) / 10 : 0;
+    // Réserve : combien de mois de dépenses réelles moyennes les livrets couvrent
+    const reserve = base.depenses > 0 && livrets !== null ? Math.round(livrets / base.depenses * 10) / 10 : 0;
     // Crédit : mensualités passées, puis ce qu'il reste
     const C = bundle.credit;
     let credit = null;
@@ -397,8 +443,8 @@
     const nc = ops.filter((o) => o.poste === 'non_classe').length;
     return {
       mc, mois_mc: moisLabel(mc), debut, fin, nbJours, ecoules, exp, j0,
-      revenus_ref: revenusRef, salaire_ref: Number(R.salaire_ref) || 0, fixes, variables, enveloppes, plan,
-      mois: { reste: resteBudget, par_jour: r2(resteBudget / joursRestants), joursRestants, depense: depenseMois, epargne: epargneMois, salaire: salaireRecu, surplus, repart: repartMois, fixes: fixesMois },
+      revenus_ref: revenusRef, revenus_base: revBase, salaire_ref: Number(R.salaire_ref) || 0, reel, dernier, base, fixes, variables, enveloppes, plan,
+      mois: { revenus: revMois, vire: r2(dep(mc, 'epargne')), reste_a_virer: r2(Math.max(0, epargneMois - dep(mc, 'epargne'))), reste: resteNet, par_jour: r2(resteNet / joursRestants), joursRestants, depense: depenseMois, epargne: epargneMois, salaire: salaireRecu, surplus, repart: repartMois, fixes: fixesMois },
       compte, compte_min: compteMin,
       epargne: { livrets, pea, total: r2((livrets || 0) + (pea || 0)), livrets_date: Ep.livrets ? Ep.livrets.date : '', pea_date: Ep.pea ? Ep.pea.date : '', reserve },
       credit, nc, epargne_min: Number(R.epargne_min) || 0.1, epargne_obj: Number(R.epargne_obj) || 0.2,
@@ -411,7 +457,8 @@
   const choix = (x, def) => { const v = val(x); return v === null ? { v: def, hyp: true } : { v, hyp: false }; };
   const moisEntre = (deK, aK) => (Number(aK.slice(0, 4)) - Number(deK.slice(0, 4))) * 12 + Number(aK.slice(5, 7)) - Number(deK.slice(5, 7));
   function projeter(type, rep, c) {
-    const P = c.plan, S = Math.max(0, Number(c.salaire_ref) || 0);
+    // Base : moyenne réelle des derniers mois (revenus hors exceptionnels, dépenses, épargne, salaire moyen)
+    const P = Object.assign({}, c.base, { pct: { epargne: c.base.pct_epargne } }), S = Math.max(0, Number(c.base.salaire) || 0);
     const reserveDe = (deficit) => (deficit > 0 && c.epargne.livrets ? Math.round(c.epargne.livrets / deficit * 10) / 10 : null);
     const out = { hyp: {} };
     const note = (k, o) => { out.hyp[k] = o.hyp; return o.v; };
@@ -495,6 +542,31 @@
     return 0;
   }
 
-  const api = { lireExport, importer, reclasser, calculer, projeter, lireZip, catalogue, marchand, nomLisible, dateAchat, moisDe, moisLabel, moisDecale, dateCourte, frDate, FAMILLES, VARIABLES, ENVELOPPES };
+  // Corrections ponctuelles des données déjà sur le téléphone, appliquées une seule fois chacune
+  function migrer(bundle) {
+    const faites = new Set(bundle.migrations || []);
+    let b = bundle;
+    if (!faites.has('abonnements-libelle')) {
+      // Abonnements classés en achats (ex. Amazon Prime) : reclassés, sauf choix fait à la main ; le montant fixe prend en compte le dernier prélèvement
+      const ids = new Set(catalogue(b).map((p) => p.id));
+      if (ids.has('abonnements')) {
+        let dernier = null;
+        const ops = b.operations.map((o) => {
+          if (o.montant < 0 && o.poste !== 'abonnements' && o.src !== 'manuel' && ABONNEMENTS.test(norm(o.libelle).toUpperCase())) {
+            if (!/APPLE\.COM|SPOTIFY/.test(norm(o.libelle).toUpperCase()) && (!dernier || o.date > dernier.date)) dernier = o;
+            return Object.assign({}, o, { poste: 'abonnements', src: 'règle' });
+          }
+          return o;
+        });
+        const ajout = dernier ? -dernier.montant : 0;
+        const fixes = (b.fixes || []).map((f) => (f.id === 'abonnements' && ajout ? Object.assign({}, f, { montant: r2(Number(f.montant) + ajout) }) : f));
+        b = Object.assign({}, b, { operations: ops, fixes });
+      }
+      faites.add('abonnements-libelle');
+    }
+    return faites.size === (bundle.migrations || []).length ? bundle : Object.assign({}, b, { migrations: [...faites] });
+  }
+
+  const api = { migrer, lireExport, importer, reclasser, calculer, projeter, lireZip, catalogue, marchand, nomLisible, dateAchat, moisDe, moisLabel, moisDecale, dateCourte, frDate, FAMILLES, VARIABLES, ENVELOPPES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.Moteur = api;
 })(typeof window !== 'undefined' ? window : globalThis);
