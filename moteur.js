@@ -352,11 +352,14 @@
     const fracRestante = Math.max(0, nbJours - ecoules) / nbJours;
     const attendu = (v) => v.depense + Math.max(0, v.reste) * fracRestante;
     const varMois = r2(somme(variables.map(attendu)));
-    const epargneMois = r2(revenusRef + surplus - fixesMois - varMois - E);
+    // Enveloppes : pas de réserve qui se cumule ; ce qui est dépensé ce mois-ci (ou la part prévue, au prorata des jours restants) sort de l'épargne
+    const attenduEnv = (e) => e.depense_mois + Math.max(0, e.par_mois - e.depense_mois) * fracRestante;
+    const envMois = r2(somme(enveloppes.map(attenduEnv)));
+    const epargneMois = r2(revenusRef + surplus - fixesMois - varMois - envMois);
     const depenseMois = r2(somme(variables.map((v) => v.depense)));
     const repartMois = {
-      obligations: pct(fixesMois + somme(variables.filter((v) => v.groupe === 'obligations').map(attendu)) + oblEnv),
-      plaisir: pct(somme(variables.filter((v) => v.groupe === 'plaisir').map(attendu)) + plaisirEnv),
+      obligations: pct(fixesMois + somme(variables.filter((v) => v.groupe === 'obligations').map(attendu)) + somme(enveloppes.filter((e) => e.groupe === 'obligations').map(attenduEnv))),
+      plaisir: pct(somme(variables.filter((v) => v.groupe === 'plaisir').map(attendu)) + somme(enveloppes.filter((e) => e.groupe === 'plaisir').map(attenduEnv))),
       epargne: revenusRef > 0 ? epargneMois / revenusRef : 0
     };
 

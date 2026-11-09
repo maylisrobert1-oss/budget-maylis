@@ -368,21 +368,39 @@
     };
     const grp = (g) => c.variables.filter((v) => v.groupe === g);
     const sumObj = (g) => grp(g).reduce((s, v) => s + v.objectif, 0);
-    // Sous-total : ce qui a été dépensé dans le mois, sur l'objectif
     const sumDep = (g) => grp(g).reduce((s, v) => s + v.depense, 0);
-    const sousTotal = (g) => eur(sumDep(g)) + ' sur ' + eur(sumObj(g));
-    out.push(section('Obligations', sousTotal('obligations')), liste(grp('obligations').map(lignePoste)));
-    out.push(section('Plaisir', sousTotal('plaisir')), liste(grp('plaisir').map(lignePoste)));
+    const envDep = c.enveloppes.reduce((s, e) => s + Math.max(0, e.depense_mois), 0);
+    const fixPaye = c.fixes.reduce((s, f) => s + Math.max(0, f.passe), 0);
+
+    // Sous-totaux du mois : dépensé sur budget, même style que la barre d'épargne
+    out.push(section('Dépenses du mois'));
+    const st = el('div', 'v-carte');
+    [['Obligations', sumDep('obligations'), sumObj('obligations'), TON.obligations, 'restants'],
+     ['Plaisir', sumDep('plaisir'), sumObj('plaisir'), TON.plaisir, 'restants'],
+     ['Enveloppes', envDep, P.enveloppes, TON.enveloppe, 'restants'],
+     ['Charges fixes', fixPaye, P.fixes, TON.fixe, 'à venir']].forEach(([nom, d, b, col, mot], i) => {
+      const bloc = el('div'); if (i) bloc.style.marginTop = '14px';
+      const t = el('div'); t.style.cssText = 'display:flex;justify-content:space-between;align-items:baseline;gap:8px';
+      const v = el('span', '', eur(d) + ' sur ' + eur(b)); v.style.font = '600 17px var(--sfr)';
+      t.append(el('span', '', nom), v);
+      const r = b - d, br = barre(b > 0 ? d / b : 0, d > b + 0.5 ? 'var(--red)' : col, mot === 'restants' ? tempo : null); br.style.height = '8px';
+      const s = el('div', 'v-gris' + (r < -0.5 ? ' neg' : ''), r >= -0.5 ? eur(Math.max(0, r)) + ' ' + mot : eur(-r) + ' de dépassement'); s.style.cssText += ';font-size:13px;margin-top:5px';
+      bloc.append(t, br, s); st.append(bloc);
+    });
+    out.push(st);
+
+    out.push(section('Obligations'), liste(grp('obligations').map(lignePoste)));
+    out.push(section('Plaisir'), liste(grp('plaisir').map(lignePoste)));
 
     // Enveloppes : mises de côté chaque mois, sans plafond
-    out.push(section('Enveloppes', eur(c.enveloppes.reduce((s, e) => s + Math.max(0, e.depense_mois), 0)) + ' sur ' + eur(P.enveloppes)));
+    out.push(section('Enveloppes'));
     out.push(liste(c.enveloppes.map((e) => ligne({ ic: e.ic, ton: TON.enveloppe, titre: e.nom,
-      sous: e.par_mois > 0 ? eur(e.par_mois) + '/mois' + (e.depense_mois > 0 ? ' · dépensé ' + eur(e.depense_mois) : '') : 'Se remplit avec les vraies dépenses',
-      val: eur(e.de_cote), valSous: e.de_cote >= 0 ? 'de côté' : 'à rattraper', valCls: e.de_cote < 0 ? 'neg' : '', clic: () => voirPoste(e.id, '') }))));
-    out.push(note('Chaque mois, la part de chaque enveloppe est mise de côté. Une dépense classée dans une enveloppe est prise dessus, pas sur le mois.'));
+      sous: e.par_mois > 0 ? 'Prévu ' + eur(e.par_mois) + ' par mois' : 'Pas encore de dépense de ce type',
+      val: eur(e.depense_mois), valSous: 'ce mois-ci', clic: () => voirPoste(e.id) }))));
+    out.push(note('Dépenses rares, sans plafond : ce qui est dépensé dans le mois est retiré de l’épargne prévue. Rien ne se reporte sur le mois suivant.'));
 
     // Charges fixes
-    out.push(section('Charges fixes', eur(c.fixes.reduce((s, f) => s + Math.max(0, f.passe), 0)) + ' sur ' + eur(P.fixes)));
+    out.push(section('Charges fixes'));
     out.push(liste(c.fixes.map((f) => ligne({ ic: f.ic, ton: TON.fixe, titre: f.nom, sous: f.reste > 0 ? (f.jour ? 'Attendu vers le ' + f.jour : 'Attendu') : 'Passé', val: eur2(f.montant), clic: () => voirPoste(f.id) }))));
     $('v-mois').replaceChildren(...out);
   };
