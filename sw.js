@@ -1,5 +1,5 @@
 // Cache de l'appli pour un usage hors ligne. Changer VERSION à chaque mise à jour des fichiers.
-const VERSION = 'budget-maylis-v1';
+const VERSION = 'budget-maylis-v2';
 const FICHIERS = ['./', 'index.html', 'moteur.js', 'app.js', 'manifest.json', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {

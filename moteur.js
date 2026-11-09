@@ -289,15 +289,21 @@
     // Objectifs des postes du mois : moyenne glissante des mois terminés.
     // Sans mois terminé dans la fenêtre (poste qui vient de changer), on part du montant de départ convenu.
     const depart = bundle.objectifs_depart || {};
+    // Un % saisi à la main (part des revenus de référence) remplace la moyenne glissante
+    const manuels = bundle.objectifs_manuels || {};
+    const manuel = (id) => (manuels[id] !== undefined && manuels[id] !== null && isFinite(Number(manuels[id])) ? Number(manuels[id]) : null);
     const objectifDe = (p) => {
       const l = moisFenetre([R.objectifs_depuis, fenetres[p.id]].filter(Boolean).sort().pop());
-      const v = l.length ? Math.max(0, somme(l.map((m) => dep(m, p.id))) / l.length) : Number(depart[p.id]) || 0;
-      return { objectif: r2(v), mois: l, depart: !l.length && depart[p.id] !== undefined };
+      const auto = l.length ? Math.max(0, somme(l.map((m) => dep(m, p.id))) / l.length) : Number(depart[p.id]) || 0;
+      const m = manuel(p.id);
+      return { objectif: r2(m !== null ? m * revenusRef : auto), auto: r2(auto), manuel: m !== null, mois: l, depart: !l.length && depart[p.id] !== undefined };
     };
-    // Enveloppes : moyenne mensuelle des 12 derniers mois (sans plafond)
+    // Enveloppes : moyenne mensuelle des 12 derniers mois (sans plafond), ou % saisi à la main
     const parMoisEnv = (p) => {
       const l = moisFenetre(fenetres[p.id]);
-      return { par_mois: l.length ? r2(Math.max(0, somme(l.map((m) => dep(m, p.id))) / l.length)) : 0, mois: l };
+      const auto = l.length ? r2(Math.max(0, somme(l.map((m) => dep(m, p.id))) / l.length)) : 0;
+      const m = manuel(p.id);
+      return { par_mois: m !== null ? r2(m * revenusRef) : auto, auto, manuel: m !== null, mois: l };
     };
 
     const fixes = (bundle.fixes || []).map((f) => {
@@ -313,7 +319,7 @@
     const ecoules = Math.min(nbJours, Math.max(0, ecartJours(debut, exp) + 1));
     const variables = VARIABLES.map((p) => {
       const o = objectifDe(p), d = dep(mc, p.id);
-      return Object.assign({}, p, { objectif: o.objectif, pct: pct(o.objectif), depense: d, reste: r2(o.objectif - d), mois_objectif: o.mois, depart: o.depart });
+      return Object.assign({}, p, { objectif: o.objectif, pct: pct(o.objectif), depense: d, reste: r2(o.objectif - d), mois_objectif: o.mois, depart: o.depart, auto: o.auto, manuel: o.manuel });
     });
     const debutSuivi = R.suivi_depuis || mc;
     const enveloppes = ENVELOPPES.map((p) => {
@@ -321,7 +327,7 @@
       // Mis de côté depuis le début du suivi, moins ce qui a été dépensé depuis
       let n = 0; for (let m = debutSuivi; m <= mc; m = moisDecale(m, 1)) n++;
       let depuis = 0; for (let m = debutSuivi; m <= mc; m = moisDecale(m, 1)) depuis += dep(m, p.id);
-      return Object.assign({}, p, { par_mois: e.par_mois, pct: pct(e.par_mois), depense_mois: dep(mc, p.id), depense_suivi: r2(depuis), de_cote: r2(n * e.par_mois - depuis), mois_objectif: e.mois });
+      return Object.assign({}, p, { par_mois: e.par_mois, pct: pct(e.par_mois), depense_mois: dep(mc, p.id), depense_suivi: r2(depuis), de_cote: r2(n * e.par_mois - depuis), mois_objectif: e.mois, auto: e.auto, manuel: e.manuel });
     });
     const sumG = (l, g, k) => r2(somme(l.filter((x) => x.groupe === g).map((x) => x[k])));
     const oblVar = sumG(variables, 'obligations', 'objectif'), plaisirVar = sumG(variables, 'plaisir', 'objectif');
@@ -341,12 +347,16 @@
     const salaireRecu = r2(-dep(mc, 'salaire'));
     const surplus = salaireRecu > 0 ? r2(salaireRecu - (Number(R.salaire_ref) || 0)) : 0;
     const fixesMois = r2(somme(fixes.map((f) => Math.max(f.montant, f.passe))));
-    const varMois = r2(somme(variables.map((v) => Math.max(v.objectif, v.depense))));
+    // Dépenses du mois attendues : ce qui est déjà dépensé, plus le reste du budget au prorata des jours qui restent
+    // (le dernier jour, l'épargne prévue est donc l'épargne réelle)
+    const fracRestante = Math.max(0, nbJours - ecoules) / nbJours;
+    const attendu = (v) => v.depense + Math.max(0, v.reste) * fracRestante;
+    const varMois = r2(somme(variables.map(attendu)));
     const epargneMois = r2(revenusRef + surplus - fixesMois - varMois - E);
     const depenseMois = r2(somme(variables.map((v) => v.depense)));
     const repartMois = {
-      obligations: pct(fixesMois + somme(variables.filter((v) => v.groupe === 'obligations').map((v) => Math.max(v.objectif, v.depense))) + oblEnv),
-      plaisir: pct(somme(variables.filter((v) => v.groupe === 'plaisir').map((v) => Math.max(v.objectif, v.depense))) + plaisirEnv),
+      obligations: pct(fixesMois + somme(variables.filter((v) => v.groupe === 'obligations').map(attendu)) + oblEnv),
+      plaisir: pct(somme(variables.filter((v) => v.groupe === 'plaisir').map(attendu)) + plaisirEnv),
       epargne: revenusRef > 0 ? epargneMois / revenusRef : 0
     };
 

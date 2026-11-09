@@ -168,7 +168,7 @@
 
   // Feuille de saisie générique : champs numériques ou mois, textes fixes passés par textContent
   const dChamps = dialogue('<h2 id="ch-titre"></h2><p id="ch-texte"></p><div id="ch-champs" style="display:grid;gap:10px"></div>' + boutons('Enregistrer'), () => {
-    const vals = [...$('ch-champs').querySelectorAll('input')].map((i) => (i.type === 'month' ? i.value : nombre(i.value)));
+    const vals = [...$('ch-champs').querySelectorAll('input')].map((i) => (i.type === 'month' ? i.value : i.value.trim() === '' ? null : nombre(i.value)));
     return champsOk ? champsOk(vals) : undefined;
   });
   let champsOk = null;
@@ -326,23 +326,21 @@
     if (c.ecoules < c.nbJours) { pj.append('soit ', el('b', '', eur(c.mois.par_jour) + ' par jour')); pj.lastChild.style.color = 'var(--fg)'; pj.append(' jusqu’au ' + M.dateCourte(c.fin)); }
     else pj.append('Dernier jour du mois : importe l’export de demain pour démarrer le suivant.');
     h.append(pj);
-    const rp = c.mois.repart, rep = el('div', 'v-repart'), pile = el('div', 'v-pile');
-    pile.setAttribute('role', 'img'); pile.setAttribute('aria-label', 'Obligations ' + pc0(rp.obligations) + ', plaisir ' + pc0(rp.plaisir) + ', épargne ' + pc0(rp.epargne));
-    [['obligations', 'var(--blue)'], ['plaisir', 'var(--indigo)'], ['epargne', 'var(--green)']].forEach(([k, col]) => { const i = el('i'); i.style.flex = String(Math.max(0, rp[k])); i.style.background = col; pile.append(i); });
-    const reperes = el('div', 'v-reperes'); [['50 %', 50], ['80 %', 80]].forEach(([t, x]) => { const s = el('span', '', t); s.style.left = x + '%'; reperes.append(s); });
-    const leg = el('div', 'v-leg');
-    [['Obligations', 'var(--blue)', rp.obligations, 'repère 50 %'], ['Plaisir', 'var(--indigo)', rp.plaisir, 'repère 30 %'], ['Épargne', 'var(--green)', rp.epargne, 'repère 20 %']].forEach(([n, col, v, r]) => {
-      const d = el('div'), s = el('span'), i = el('i'); i.style.background = col; s.append(i, n);
-      const vv = el('span', '', pc0(v) + ' '); vv.append(el('em', '', r)); d.append(s, vv); leg.append(d);
-    });
-    rep.append(pile, reperes, leg); h.append(rep); out.push(h);
+    // Jauge du mois : dépensé sur le budget des postes ; le trait = où on en est dans le mois
+    const budgetMois = c.variables.reduce((s, v) => s + v.objectif, 0), depMois = c.mois.depense;
+    const jauge = barre(budgetMois > 0 ? depMois / budgetMois : 0, depMois > budgetMois ? 'var(--red)' : 'var(--blue)', c.ecoules / c.nbJours);
+    jauge.style.height = '10px'; jauge.style.borderRadius = '5px'; jauge.style.marginTop = '16px';
+    const jl = el('div', 'v-gris'); jl.style.cssText = 'display:flex;justify-content:space-between;font-size:13px;margin-top:6px';
+    jl.append(el('span', '', 'Dépensé ' + eur(depMois)), el('span', '', 'Budget ' + eur(budgetMois)));
+    h.append(jauge, jl); out.push(h);
 
     // À faire
     const af = [];
     if (c.compte && c.compte.prevu !== null && c.compte.prevu < c.compte_min)
       af.push(ligne({ ic: 'baisse', ton: 'var(--red)', titre: 'Compte à ' + eur(c.compte.prevu) + ' le ' + M.dateCourte(c.compte.le), sous: 'Sous ton minimum de ' + eur(c.compte_min) + ' avant le loyer' }));
-    if (c.mois.repart.epargne < c.epargne_min)
-      af.push(ligne({ ic: 'pct', ton: 'var(--orange)', titre: 'Épargne prévue : ' + pc0(c.mois.repart.epargne), sous: 'Sous ton minimum de ' + pc0(c.epargne_min) }));
+    const minE = c.epargne_min * c.revenus_ref, objE = c.epargne_obj * c.revenus_ref;
+    if (c.mois.epargne < minE)
+      af.push(ligne({ ic: 'cible', ton: 'var(--orange)', titre: 'Épargne prévue : ' + eur(c.mois.epargne), sous: 'Sous ton minimum de ' + eur(minE) }));
     if (c.nc) af.push(ligne({ ic: 'etiquette', ton: 'var(--orange)', titre: c.nc + ' opération' + (c.nc > 1 ? 's' : '') + ' à classer', chev: true, clic: () => { Object.assign(filtre, { poste: '', mois: '', aClasser: true, limite: 150 }); onglet('operations'); dessinerOps(); } }));
     if (af.length) out.push(section('À faire'), liste(af));
 
@@ -350,12 +348,11 @@
     out.push(section('Épargne prévue'));
     const ep = el('div', 'v-carte'), tete = el('div'); tete.style.cssText = 'display:flex;justify-content:space-between;align-items:baseline;gap:8px';
     const big = el('span', '', eur(c.mois.epargne)); big.style.font = '700 22px var(--sfr)'; if (c.mois.epargne < 0) big.className = 'neg';
-    const pp = el('span', 'v-gris', ' · ' + pc(c.mois.repart.epargne)); pp.style.fontSize = '15px'; big.append(pp);
     tete.append(el('span', 'v-gris', 'Fin du mois, le ' + M.dateCourte(c.fin)), big); ep.append(tete);
-    const echelle = 0.25, part = Math.max(0, c.mois.repart.epargne) / echelle;
-    const b = barre(part, c.mois.repart.epargne < c.epargne_min ? 'var(--orange)' : 'var(--green)'); b.style.height = '8px';
-    [c.epargne_min, c.epargne_obj].forEach((x) => { const m = el('b'); m.style.left = Math.min(99, x / echelle * 100) + '%'; b.append(m); }); ep.append(b);
-    const ech = el('div', 'v-echelle'); [['min. ' + pc0(c.epargne_min), c.epargne_min], ['objectif ' + pc0(c.epargne_obj), c.epargne_obj]].forEach(([t, x]) => { const s = el('span', '', t); s.style.left = Math.min(92, x / echelle * 100) + '%'; ech.append(s); });
+    const echelle = Math.max(objE * 1.25, c.mois.epargne, 1), part = Math.max(0, c.mois.epargne) / echelle;
+    const b = barre(part, c.mois.epargne < minE ? 'var(--orange)' : 'var(--green)'); b.style.height = '8px';
+    [minE, objE].forEach((x) => { const m = el('b'); m.style.left = Math.min(99, x / echelle * 100) + '%'; b.append(m); }); ep.append(b);
+    const ech = el('div', 'v-echelle'); [['min. ' + eur(minE), minE], ['objectif ' + eur(objE), objE]].forEach(([t, x]) => { const s = el('span', '', t); s.style.left = Math.min(88, x / echelle * 100) + '%'; ech.append(s); });
     ep.append(ech);
     if (c.mois.salaire > 0) ep.append(note('Salaire reçu : ' + eur2(c.mois.salaire) + (Math.abs(c.mois.surplus) >= 1 ? ' (' + signe2(c.mois.surplus) + ' par rapport aux ' + eur(c.salaire_ref) + ' de référence, ' + (c.mois.surplus > 0 ? 'en plus pour l’épargne' : 'en moins') + ')' : '') + '.'));
     else ep.append(note('Calculée avec ton salaire de référence (' + eur(c.salaire_ref) + ') ; elle s’ajuste quand la paie arrive.'));
@@ -366,23 +363,26 @@
     const lignePoste = (v) => {
       const ratio = v.objectif > 0 ? v.depense / v.objectif : v.depense > 0 ? 1.01 : 0;
       const coul = ratio > 1 ? 'var(--red)' : ratio > tempo + 0.15 ? 'var(--orange)' : TON[v.groupe];
-      return ligne({ ic: v.ic, ton: ratio > 1 ? 'var(--red)' : TON[v.groupe], titre: v.nom, sous: pc(v.pct) + ' · ' + eur(v.objectif), apres: barre(ratio, coul, tempo),
+      return ligne({ ic: v.ic, ton: ratio > 1 ? 'var(--red)' : TON[v.groupe], titre: v.nom, sous: 'Objectif ' + eur(v.objectif), apres: barre(ratio, coul, tempo),
         val: v.reste >= 0 ? eur(v.reste) : eur(v.reste), valSous: v.reste >= 0 ? 'restants' : 'dépassé', valCls: v.reste < 0 ? 'neg' : '', clic: () => voirPoste(v.id) });
     };
     const grp = (g) => c.variables.filter((v) => v.groupe === g);
     const sumObj = (g) => grp(g).reduce((s, v) => s + v.objectif, 0);
-    out.push(section('Obligations', pc(sumObj('obligations') / c.revenus_ref) + ' · ' + eur(sumObj('obligations'))), liste(grp('obligations').map(lignePoste)));
-    out.push(section('Plaisir', pc(sumObj('plaisir') / c.revenus_ref) + ' · ' + eur(sumObj('plaisir'))), liste(grp('plaisir').map(lignePoste)));
+    // Sous-total : ce qui a été dépensé dans le mois, sur l'objectif
+    const sumDep = (g) => grp(g).reduce((s, v) => s + v.depense, 0);
+    const sousTotal = (g) => eur(sumDep(g)) + ' sur ' + eur(sumObj(g));
+    out.push(section('Obligations', sousTotal('obligations')), liste(grp('obligations').map(lignePoste)));
+    out.push(section('Plaisir', sousTotal('plaisir')), liste(grp('plaisir').map(lignePoste)));
 
     // Enveloppes : mises de côté chaque mois, sans plafond
-    out.push(section('Enveloppes', pc(P.pct.enveloppes) + ' · ' + eur(P.enveloppes) + '/mois'));
+    out.push(section('Enveloppes', eur(c.enveloppes.reduce((s, e) => s + Math.max(0, e.depense_mois), 0)) + ' sur ' + eur(P.enveloppes)));
     out.push(liste(c.enveloppes.map((e) => ligne({ ic: e.ic, ton: TON.enveloppe, titre: e.nom,
-      sous: e.par_mois > 0 ? pc(e.pct) + ' · ' + eur(e.par_mois) + '/mois' + (e.depense_mois > 0 ? ' · dépensé ' + eur(e.depense_mois) : '') : 'Se remplit avec les vraies dépenses',
+      sous: e.par_mois > 0 ? eur(e.par_mois) + '/mois' + (e.depense_mois > 0 ? ' · dépensé ' + eur(e.depense_mois) : '') : 'Se remplit avec les vraies dépenses',
       val: eur(e.de_cote), valSous: e.de_cote >= 0 ? 'de côté' : 'à rattraper', valCls: e.de_cote < 0 ? 'neg' : '', clic: () => voirPoste(e.id, '') }))));
     out.push(note('Chaque mois, la part de chaque enveloppe est mise de côté. Une dépense classée dans une enveloppe est prise dessus, pas sur le mois.'));
 
     // Charges fixes
-    out.push(section('Charges fixes', pc(P.pct.fixes) + ' · ' + eur(P.fixes)));
+    out.push(section('Charges fixes', eur(c.fixes.reduce((s, f) => s + Math.max(0, f.passe), 0)) + ' sur ' + eur(P.fixes)));
     out.push(liste(c.fixes.map((f) => ligne({ ic: f.ic, ton: TON.fixe, titre: f.nom, sous: f.reste > 0 ? (f.jour ? 'Attendu vers le ' + f.jour : 'Attendu') : 'Passé', val: eur2(f.montant), clic: () => voirPoste(f.id) }))));
     $('v-mois').replaceChildren(...out);
   };
@@ -539,12 +539,20 @@
   // ========== Réglages ==========
   const dessinerReglages = () => {
     const c = C(), P = c.plan, R = bundle.reglages, out = [];
-    const k = el('div', 'v-carte'); k.append(el('div', 'v-gris', 'Un mois normal · ' + eur(P.revenus)));
-    const pile = el('div', 'v-pile'); pile.style.height = '12px'; pile.style.marginTop = '8px';
-    [[P.fixes, 'var(--gray)'], [P.obligations_var, 'var(--blue)'], [P.plaisir_var, 'var(--indigo)'], [P.enveloppes, 'var(--orange)'], [Math.max(0, P.epargne), 'var(--green)']].forEach(([v, col]) => { const i = el('i'); i.style.flex = String(v); i.style.background = col; pile.append(i); });
-    const lg = el('div', 'v-gris'); lg.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:8px;font-size:13px';
-    [['Fixes', P.pct.fixes], ['Obligations', P.pct.obligations_var], ['Plaisir', P.pct.plaisir_var], ['Enveloppes', P.pct.enveloppes], ['Épargne', P.pct.epargne]].forEach(([n, v]) => lg.append(el('span', '', n + ' ' + pc0(v))));
-    k.append(pile, lg); out.push(k);
+    // Ton budget en % de tes revenus, face au repère 50 / 30 / 20
+    const k = el('div', 'v-carte'); k.append(el('div', 'v-gris', 'Un mois normal · ' + eur(P.revenus) + ' de revenus'));
+    const rep = el('div', 'v-repart'), pile = el('div', 'v-pile');
+    pile.setAttribute('role', 'img'); pile.setAttribute('aria-label', 'Obligations ' + pc0(P.pct.obligations) + ', plaisir ' + pc0(P.pct.plaisir) + ', épargne ' + pc0(P.pct.epargne));
+    [[P.pct.obligations, 'var(--blue)'], [P.pct.plaisir, 'var(--indigo)'], [Math.max(0, P.pct.epargne), 'var(--green)']].forEach(([v, col]) => { const i = el('i'); i.style.flex = String(v); i.style.background = col; pile.append(i); });
+    const reperes = el('div', 'v-reperes'); [['50 %', 50], ['80 %', 80]].forEach(([t, x]) => { const s = el('span', '', t); s.style.left = x + '%'; reperes.append(s); });
+    const leg = el('div', 'v-leg');
+    [['Obligations', 'var(--blue)', P.pct.obligations, 'repère 50 %'], ['Plaisir', 'var(--indigo)', P.pct.plaisir, 'repère 30 %'], ['Épargne', 'var(--green)', P.pct.epargne, 'repère 20 %']].forEach(([n, col, v, r]) => {
+      const d = el('div'), s = el('span'), i = el('i'); i.style.background = col; s.append(i, n);
+      const vv = el('span', '', pc(v) + ' '); vv.append(el('em', '', r)); d.append(s, vv); leg.append(d);
+    });
+    const det = el('div', 'v-gris'); det.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:10px;font-size:13px';
+    [['Charges fixes', P.pct.fixes], ['Postes obligations', P.pct.obligations_var], ['Postes plaisir', P.pct.plaisir_var], ['Enveloppes', P.pct.enveloppes]].forEach(([n, v]) => det.append(el('span', '', n + ' ' + pc(v))));
+    rep.append(pile, reperes, leg, det); k.append(rep); out.push(k);
 
     out.push(liste([
       ligne({ ic: 'billet', ton: 'var(--green)', titre: 'Salaire de référence', sous: 'Ce qui dépasse part en épargne', val: eur(R.salaire_ref), chev: true,
@@ -585,17 +593,38 @@
     out.push(note('Toutes tes données restent sur ce téléphone. Pense à sauvegarder après chaque import.'));
     $('v-reglages').replaceChildren(...out);
   };
+  // Saisie d'un % à la main ; champ vide = retour à la moyenne automatique
+  const pcTexte = (x) => String(Math.round(x * 1000) / 10).replace('.', ',');
+  const saisirPct = (p, autoTxt) => {
+    const c = C();
+    saisir(p.nom, 'En % de tes revenus de référence (' + eur(c.revenus_ref) + '). Laisse vide pour revenir à l’automatique : ' + autoTxt + '.',
+      [{ lib: 'Part des revenus (%)', valeur: p.manuel ? pcTexte(p.pct) : '' }], ([v]) => {
+        const m = Object.assign({}, bundle.objectifs_manuels || {});
+        if (v === null) { delete m[p.id]; modifie({ objectifs_manuels: m }, p.nom + ' : retour à l’automatique.'); return; }
+        if (!(v >= 0 && v <= 100)) return 'Tape un pourcentage entre 0 et 100, par exemple 7,5.';
+        m[p.id] = Math.round(v * 10) / 1000;
+        modifie({ objectifs_manuels: m }, p.nom + ' : ' + pcTexte(m[p.id]) + ' % (' + eur(m[p.id] * c.revenus_ref) + ').');
+      });
+  };
+  const sousAuto = (p, base) => (p.manuel ? 'Fixé à la main · automatique : ' + pc(p.auto / C().revenus_ref) : base);
   const corpsObjectifs = () => {
-    const c = C(), out = [note('Chaque objectif est la moyenne de tes dépenses sur les mois terminés (12 au plus), depuis ' + (c.objectifs_depuis ? M.moisLabel(c.objectifs_depuis) : 'le début') + '. Il bouge chaque mois avec tes vraies dépenses.')];
+    const c = C(), out = [note('Par défaut, chaque objectif est la moyenne de tes dépenses sur les mois terminés (12 au plus), depuis ' + (c.objectifs_depuis ? M.moisLabel(c.objectifs_depuis) : 'le début') + '. Touche un poste pour fixer son % à la main.')];
     ['obligations', 'plaisir'].forEach((g) => {
-      out.push(section(g === 'obligations' ? 'Obligations' : 'Plaisir'));
-      out.push(liste(c.variables.filter((v) => v.groupe === g).map((v) => ligne({ ic: v.ic, ton: TON[g], titre: v.nom, sous: v.mois_objectif.length ? 'Moyenne de ' + v.mois_objectif.length + ' mois, depuis ' + M.moisLabel(v.mois_objectif[0]) : v.depart ? 'Montant de départ, jusqu’au premier mois terminé' : 'Pas encore de mois terminé', val: pc(v.pct), valSous: eur(v.objectif) }))));
+      const l = c.variables.filter((v) => v.groupe === g);
+      out.push(section(g === 'obligations' ? 'Obligations' : 'Plaisir', pc(l.reduce((s, v) => s + v.pct, 0))));
+      out.push(liste(l.map((v) => {
+        const base = v.mois_objectif.length ? 'Moyenne de ' + v.mois_objectif.length + ' mois, depuis ' + M.moisLabel(v.mois_objectif[0]) : v.depart ? 'Montant de départ, jusqu’au premier mois terminé' : 'Pas encore de mois terminé';
+        return ligne({ ic: v.ic, ton: TON[g], titre: v.nom, sous: sousAuto(v, base), sousCls: v.manuel ? 'badge' : '', val: pc(v.pct), valSous: eur(v.objectif), chev: true,
+          clic: () => saisirPct(v, pc(v.auto / c.revenus_ref) + ' (' + eur(v.auto) + ')') });
+      })));
     });
     return out;
   };
   const corpsEnveloppes = () => {
-    const c = C(), out = [note('Dépenses rares, sans plafond. La part du mois est la moyenne de ce que tu as vraiment dépensé sur les 12 derniers mois.')];
-    out.push(liste(c.enveloppes.map((e) => ligne({ ic: e.ic, ton: TON.enveloppe, titre: e.nom, sous: e.mois_objectif.length ? 'Moyenne de ' + e.mois_objectif.length + ' mois' : 'Pas encore de dépense', val: pc(e.pct), valSous: eur(e.par_mois) + '/mois', clic: () => voirPoste(e.id, '') }))));
+    const c = C(), out = [note('Dépenses rares, sans plafond. Par défaut, la part du mois est la moyenne de ce que tu as vraiment dépensé sur les 12 derniers mois. Touche une enveloppe pour fixer son % à la main.')];
+    out.push(section('Enveloppes', pc(c.plan.pct.enveloppes)));
+    out.push(liste(c.enveloppes.map((e) => ligne({ ic: e.ic, ton: TON.enveloppe, titre: e.nom, sous: sousAuto(e, e.mois_objectif.length ? 'Moyenne de ' + e.mois_objectif.length + ' mois' : 'Pas encore de dépense'), sousCls: e.manuel ? 'badge' : '',
+      val: pc(e.pct), valSous: eur(e.par_mois) + '/mois', chev: true, clic: () => saisirPct(e, pc(e.auto / c.revenus_ref) + ' (' + eur(e.auto) + '/mois)') }))));
     return out;
   };
   const corpsFixes = () => {
