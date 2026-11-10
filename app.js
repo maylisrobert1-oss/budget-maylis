@@ -456,7 +456,7 @@
     const lh = (k, t) => { if (H[k]) hyps.push(t); };
     const carteGros = (lab, v, sous, cls) => { const k = el('div', 'v-carte'); k.append(el('div', 'v-gris', lab)); const g = el('div', 'v-gros', v); if (cls) g.className += ' ' + cls; k.append(g); if (sous) k.append(el('div', 'v-gris', sous)); return k; };
     if (scen === 'conges') {
-      lh('jours', x.jours + ' jours'); lh('mois', 'en ' + x.mois_lib); lh('par_jour', eur(x.par_jour) + ' par jour (salaire moyen de ' + eur(c.base.salaire) + ' ÷ 21,7 jours travaillés)');
+      lh('jours', x.jours + ' jours'); lh('mois', 'en ' + x.mois_lib); lh('par_jour', eur(x.par_jour) + ' par jour (' + (c.base.salaire_reel ? 'salaire moyen' : 'salaire de référence') + ' de ' + eur(c.base.salaire) + ' ÷ 21,7 jours travaillés)');
       out.push(carteGros('À mettre de côté avant ' + x.mois_lib, eur(x.total), 'soit ' + eur(x.par_mois) + ' par mois pendant ' + x.n + ' mois'));
       out.push(liste([
         ligne({ titre: 'Ton épargne pendant ces mois', val: pc0(x.epargne_avant) + ' → ' + pc0(x.epargne_pendant), valCls: x.epargne_pendant < c.epargne_min ? 'orange' : '' }),
@@ -464,7 +464,7 @@
         ligne({ titre: 'Ta réserve tiendrait encore', val: c.epargne.reserve + ' mois' })
       ], true));
     } else if (scen === 'baisse') {
-      lh('salaire', eur(x.salaire) + ' (20 % de moins que ton salaire moyen de ' + eur(c.base.salaire) + ')');
+      lh('salaire', eur(x.salaire) + ' (20 % de moins que ton ' + (c.base.salaire_reel ? 'salaire moyen' : 'salaire de référence') + ' de ' + eur(c.base.salaire) + ')');
       out.push(carteGros('Ton épargne passerait de ' + pc0(x.avant_pct) + ' à', pc0(x.epargne_pct), eur(x.epargne) + ' par mois', x.epargne < 0 ? 'neg' : ''));
       const l = [ligne({ titre: 'Revenus du mois', val: eur(x.revenus) })];
       if (x.a_reduire > 0) {
@@ -488,12 +488,12 @@
       lh('montant', eur(x.montant)); lh('mois', 'pour ' + x.mois_lib); lh('deja', 'rien de côté pour l’instant');
       out.push(carteGros('À mettre de côté chaque mois', eur(x.par_mois), pc(x.pct) + ' de tes revenus, pendant ' + x.n + ' mois'));
       out.push(liste([
-        ligne({ titre: 'Ton épargne moyenne', val: eur(c.base.epargne) + ' /mois' }),
+        ligne({ titre: c.revenus_depuis ? 'Ton épargne attendue' : 'Ton épargne moyenne', val: eur(c.base.epargne) + ' /mois' }),
         ligne({ titre: x.epargne_reste >= 0 ? 'Il te resterait à épargner' : 'Il manquerait chaque mois', val: eur(Math.abs(x.epargne_reste)), valCls: x.epargne_reste < 0 ? 'neg' : '' })
       ], true));
     }
     if (hyps.length) { const p = el('p', 'v-note'); p.append(el('span', 'v-hyp', 'hypothèses'), ' ' + hyps.join(' · ') + '.'); out.unshift(p); out[0].style.margin = '-4px 4px 12px'; }
-    out.push(note((c.base.reel ? 'Calculs à partir de ta moyenne réelle (' + c.reel.mois.length + ' mois, hors revenus exceptionnels) : ' : 'Calculs à partir de ton budget de référence : ') + eur(c.base.revenus) + ' de revenus, ' + eur(c.base.depenses) + ' de dépenses et ' + eur(c.base.epargne) + ' d’épargne par mois.'));
+    out.push(note((!c.base.reel ? 'Calculs à partir de ton budget de référence : ' : !c.revenus_depuis ? 'Calculs à partir de ta moyenne réelle (' + c.reel.mois.length + ' mois, hors revenus exceptionnels) : ' : 'Calculs à partir de tes dépenses moyennes (' + c.reel.mois.length + ' mois) et de ' + (c.mois_revenus.length ? 'tes revenus depuis ' + M.moisLabel(c.revenus_depuis) + ' (hors revenus exceptionnels) : ' : 'tes revenus de référence, comptés depuis ' + M.moisLabel(c.revenus_depuis) + ' : ')) + eur(c.base.revenus) + ' de revenus, ' + eur(c.base.depenses) + ' de dépenses et ' + eur(c.base.epargne) + ' d’épargne par mois.'));
     $('v-proj-res').replaceChildren(...out);
   };
 
@@ -503,7 +503,8 @@
     const c = C(), E = c.epargne, out = [];
     $('v-duree-sous').textContent = c.exp ? 'Au ' + M.dateCourte(c.exp) : '';
     const k = el('div', 'v-carte'); k.append(el('div', 'v-gris', 'Épargne totale'), el('div', 'v-gros', eur(E.total)));
-    const pa = el('span', 'v-pastille' + (c.base.epargne < 0 ? ' o' : ''), (c.base.epargne >= 0 ? '+' : '') + eur(c.base.epargne) + ' épargnés par mois en moyenne'); pa.style.marginTop = '8px'; k.append(pa);
+    const epMoy = c.reel.mois.length ? c.reel.epargne : c.base.epargne;
+    const pa = el('span', 'v-pastille' + (epMoy < 0 ? ' o' : ''), (epMoy >= 0 ? '+' : '') + eur(epMoy) + ' épargnés par mois en moyenne'); pa.style.marginTop = '8px'; k.append(pa);
     out.push(k);
     const t = el('div', 'v-tuiles');
     const tuile = (ic, col, titre, v, sous) => { const d = el('div', 'v-tuile'), h = el('div', 't'); const s = dessin(ic, 15); s.style.color = col; h.append(s, titre); d.append(h, el('b', '', v), el('small', '', sous)); return d; };
@@ -601,6 +602,8 @@
         clic: () => saisir('Salaire de référence', 'Le budget est calculé sur ce montant. Un mois mieux payé ajoute la différence à l’épargne.', [{ lib: 'Salaire par mois (€)', valeur: R.salaire_ref }], ([v]) => { if (!(v > 0)) return 'Tape un montant positif.'; reglage('salaire_ref', v, 'Salaire de référence : ' + eur(v) + '.'); }) }),
       ...(R.aides || []).map((a, i) => ligne({ ic: 'maison', ton: 'var(--green)', titre: a.nom, val: eur(a.montant), chev: true,
         clic: () => saisir(a.nom, 'Montant reçu chaque mois. Mets 0 si ça s’arrête.', [{ lib: 'Montant par mois (€)', valeur: a.montant }], ([v]) => { if (!(v >= 0)) return 'Tape un montant positif ou 0.'; reglage('aides', R.aides.map((x, j) => (j === i ? Object.assign({}, x, { montant: v }) : x)), a.nom + ' : ' + eur(v) + '.'); }) })),
+      ligne({ ic: 'calendrier', ton: 'var(--green)', titre: 'Revenus depuis', sous: 'Mois où tes revenus ont changé', val: R.revenus_depuis ? M.moisLabel(R.revenus_depuis) : 'le début', chev: true,
+        clic: () => saisir('Revenus depuis', 'Si tes revenus ont changé (une aide en moins, un nouveau contrat), choisis le mois du changement : la moyenne de tes revenus repart de ce mois. Laisse vide pour compter tous les mois.', [{ lib: 'Mois du changement', type: 'mois', valeur: R.revenus_depuis || '' }], ([v]) => { if (v && !/^\d{4}-\d\d$/.test(v)) return 'Choisis un mois.'; reglage('revenus_depuis', v || '', v ? 'Revenus comptés depuis ' + M.moisLabel(v) + '.' : 'Revenus comptés depuis le début.'); }) }),
       ligne({ ic: 'calendrier', ton: 'var(--gray)', titre: 'Début du mois', val: 'le ' + c.j0, chev: true,
         clic: () => saisir('Début du mois', 'Jour où arrive la paie : le mois du budget va de ce jour au jour d’avant, le mois suivant.', [{ lib: 'Jour (1 à 28)', valeur: c.j0 }], ([v]) => { if (!(v >= 1 && v <= 28 && Number.isInteger(v))) return 'Tape un jour entre 1 et 28.'; reglage('jour_debut', v, 'Le mois commence le ' + v + '.'); }) })
     ]));
@@ -640,7 +643,7 @@
   const pcTexte = (x) => String(Math.round(x * 1000) / 10).replace('.', ',');
   const saisirPct = (p, autoTxt) => {
     const c = C();
-    saisir(p.nom, 'En % de tes revenus réels moyens (' + eur(c.revenus_base) + '). Laisse vide pour revenir à l’automatique : ' + autoTxt + '.',
+    saisir(p.nom, 'En % de ' + (c.mois_revenus.length ? 'tes revenus réels moyens' : 'tes revenus de référence') + ' (' + eur(c.revenus_base) + '). Laisse vide pour revenir à l’automatique : ' + autoTxt + '.',
       [{ lib: 'Part des revenus (%)', valeur: p.manuel ? pcTexte(p.pct) : '' }], ([v]) => {
         const m = Object.assign({}, bundle.objectifs_manuels || {});
         if (v === null) { delete m[p.id]; modifie({ objectifs_manuels: m }, p.nom + ' : retour à l’automatique.'); return; }

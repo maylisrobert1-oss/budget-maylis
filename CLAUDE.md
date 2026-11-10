@@ -48,7 +48,8 @@ Ce fichier permet à quelqu'un (ou à Claude) de reprendre l'appli sans l'histor
   reglages: {
     salaire_ref, aides: [{ id, nom, montant }], jour_debut,      // jour de paie : le mois va de ce jour au jour d'avant
     epargne_min, epargne_obj, compte_min,                         // fractions (0,1 = 10 %) et euros
-    objectifs_depuis: 'AAAA-MM', fenetre: 12                     // fenêtre de la moyenne glissante
+    objectifs_depuis: 'AAAA-MM', fenetre: 12,                    // fenêtre de la moyenne glissante
+    revenus_depuis: 'AAAA-MM'                                    // facultatif : mois où les revenus ont changé (voir « Base des pourcentages »)
   },
   fixes: [{ id, nom, montant, ic }],          // charges fixes ; ids attendus par le moteur : loyer, credit_voiture, assurance_voiture, abonnements, frais
   fenetres: { posteId: 'AAAA-MM' },           // début de moyenne propre à un poste (ex. après un changement de voiture)
@@ -91,11 +92,11 @@ Un import ne reclasse jamais une opération déjà connue (clé date + libellé 
 - **Mois budgétaire** : du `jour_debut` au jour d'avant, le mois suivant. La clé du mois est celle où il commence. Un salaire arrivé jusqu'à 5 jours avant le jour de paie compte pour le mois qui commence.
 - **Budget d'un poste** : moyenne de ses dépenses nettes (remboursements déduits) sur les mois **terminés** de la fenêtre (12 au plus, pas avant `objectifs_depuis` ni la fenêtre du poste). Sinon `objectifs_depart`. Un % manuel remplace la moyenne.
 - **Dépenses rares** : même moyenne, sans plafond. Seul ce qui est dépensé dans le mois compte ; pas de réserve cumulée ni de report.
-- **Base des pourcentages** : les revenus réels moyens (sans les revenus ponctuels « autre revenu »), ou les revenus de référence s'il n'y a pas encore de mois terminé.
+- **Base des pourcentages** : les revenus réels moyens (sans les revenus ponctuels « autre revenu »), ou les revenus de référence s'il n'y a pas encore de mois terminé. Si `revenus_depuis` est réglé (revenus qui ont changé), la moyenne des revenus ne compte que les mois terminés à partir de ce mois ; sans mois terminé depuis, ce sont les revenus de référence. Le repère 50 / 30 / 20 garde tout l'historique.
 - **Revenus du mois** : ce qui est vraiment arrivé (salaire, aides, CAF), et tant que la paie ou l'aide n'est pas arrivée, le montant de référence.
 - **À mettre de côté** = revenus du mois − charges fixes − dépenses des postes − dépenses rares. Pendant le mois, le budget non dépensé compte au prorata des jours restants ; le dernier jour, c'est le réel exact. Il doit correspondre à la variation du compte courant, plus les virements vers l'épargne.
 - **Reste / budget non dépensé** = budget total − tout le dépensé (un dépassement sur un poste réduit le reste).
-- **Réel moyen et mois dernier** (`repartition`) : mêmes mois que les budgets, mêmes exclusions. Projections, réserve et « Dans la durée » partent de cette moyenne réelle.
+- **Réel moyen et mois dernier** (`repartition`) : mêmes mois que les budgets, mêmes exclusions. La réserve et « Dans la durée » partent de cette moyenne réelle. Les projections prennent les dépenses réelles moyennes et la base des revenus (donc `revenus_depuis` s'il est réglé).
 - **Épargne (comptes)** : valeur saisie à une date, puis virements vus sur le compte courant. Les livrets sont regroupés (les virements ne disent pas lequel).
 
 Après toute modification de calcul, vérifier la cohérence entre les pages : recalculer à partir des opérations brutes (somme par mois et par famille) et comparer à ce que chaque écran affiche (dépensé, budget, reste, à mettre de côté, moyenne réelle, mois dernier, réserve, projections, totaux d'Opérations).

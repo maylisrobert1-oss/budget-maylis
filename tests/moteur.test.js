@@ -104,6 +104,22 @@
   proche('sans mois terminé : base = revenus de référence', cVide.revenus_base, 2200);
   egal('sans mois terminé : base non réelle', cVide.base.reel, false);
 
+  // ---------- Revenus qui ont changé ----------
+  dans('Revenus comptés depuis un mois');
+  const regl = (plus) => ({ reglages: Object.assign({}, donnees().reglages, plus) });
+  const cRev = M.calculer(donnees(regl({ revenus_depuis: '2026-05' })));
+  proche('base des % : revenus moyens depuis ce mois seulement', cRev.revenus_base, 2300);
+  proche('le repère garde tout l’historique', cRev.reel.revenus, 2233.33);
+  proche('les budgets automatiques ne changent pas', poste(cRev, 'courses').objectif, 300);
+  proche('projections : épargne = nouveaux revenus − dépenses moyennes', cRev.base.epargne, 1230);
+  proche('projections : salaire moyen depuis ce mois', cRev.base.salaire, 2100);
+  const cRevMan = M.calculer(donnees(Object.assign(regl({ revenus_depuis: '2026-05' }), { objectifs_manuels: { restos: 0.06 } })));
+  proche('budget fixé à la main : % de la nouvelle base', poste(cRevMan, 'restos').objectif, 138);
+  const cRevRef = M.calculer(donnees(regl({ revenus_depuis: '2026-06' })));
+  proche('aucun mois terminé depuis le changement : revenus de référence', cRevRef.revenus_base, 2200);
+  proche('aucun mois terminé depuis le changement : épargne attendue', cRevRef.base.epargne, 1130);
+  proche('sans ce réglage : base = moyenne de tous les mois', c.revenus_base, c.reel.revenus);
+
   // ---------- Mois en cours ----------
   dans('Mois en cours');
   proche('revenus du mois : paie reçue + aide de référence (pas encore arrivée)', c.mois.revenus, 2200);

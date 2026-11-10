@@ -316,7 +316,11 @@
     const mPrec = moisDecale(mc, -1);
     const dernier = mPrec >= premierComplet ? Object.assign(repartition([mPrec]), { debut: debutMois(mPrec, j0), fin: finMois(mPrec, j0) }) : null;
     // Une seule base pour tous les % de l'appli : les revenus réels moyens (sinon les revenus de référence)
-    const revBase = reel.mois.length && reel.revenus > 0 ? reel.revenus : revenusRef;
+    // Revenus qui ont changé (une aide en moins, un nouveau contrat) : `revenus_depuis` fait repartir la moyenne des revenus de ce mois.
+    // Tant qu'aucun mois terminé ne le suit, la base est celle des revenus de référence.
+    const moisRev = R.revenus_depuis ? moisFenetre([R.objectifs_depuis, R.revenus_depuis].filter(Boolean).sort().pop()) : reel.mois;
+    const revRecents = R.revenus_depuis ? repartition(moisRev) : reel;
+    const revBase = moisRev.length && revRecents.revenus > 0 ? revRecents.revenus : revenusRef;
     const pct = (v) => (revBase > 0 ? v / revBase : 0);
 
     // Objectifs des postes du mois : moyenne glissante des mois terminés.
@@ -374,10 +378,12 @@
     };
     plan.pct = { obligations: pct(plan.obligations), plaisir: pct(plan.plaisir), epargne: pct(epargnePlan), fixes: pct(F), obligations_var: pct(oblVar), plaisir_var: pct(plaisirVar), enveloppes: pct(E) };
 
-    // Base des projections et de « Dans la durée » : la moyenne réelle (ou le budget de référence sans mois terminé)
+    // Base des projections : les dépenses réelles moyennes et la base des revenus (ou le budget de référence sans mois terminé)
+    const salaireBase = moisRev.length && revRecents.salaire > 0 ? revRecents.salaire : Number(R.salaire_ref) || 0;
     const base = reel.mois.length
-      ? { revenus: reel.revenus, depenses: reel.depenses, epargne: reel.epargne, plaisir_var: reel.plaisir_var, salaire: reel.salaire > 0 ? reel.salaire : Number(R.salaire_ref) || 0, reel: true }
+      ? { revenus: revBase, depenses: reel.depenses, epargne: r2(revBase - reel.depenses), plaisir_var: reel.plaisir_var, salaire: salaireBase, reel: true }
       : { revenus: revenusRef, depenses: plan.depenses, epargne: plan.epargne, plaisir_var: plan.plaisir_var, salaire: Number(R.salaire_ref) || 0, reel: false };
+    base.salaire_reel = moisRev.length > 0 && revRecents.salaire > 0;
     base.pct_epargne = base.revenus > 0 ? base.epargne / base.revenus : 0;
 
     // Mois en cours
@@ -443,7 +449,7 @@
     const nc = ops.filter((o) => o.poste === 'non_classe').length;
     return {
       mc, mois_mc: moisLabel(mc), debut, fin, nbJours, ecoules, exp, j0,
-      revenus_ref: revenusRef, revenus_base: revBase, salaire_ref: Number(R.salaire_ref) || 0, reel, dernier, base, fixes, variables, enveloppes, plan,
+      revenus_ref: revenusRef, revenus_base: revBase, revenus_depuis: R.revenus_depuis || '', mois_revenus: moisRev, salaire_ref: Number(R.salaire_ref) || 0, reel, dernier, base, fixes, variables, enveloppes, plan,
       mois: { revenus: revMois, vire: r2(dep(mc, 'epargne')), reste_a_virer: r2(Math.max(0, epargneMois - dep(mc, 'epargne'))), reste: resteNet, par_jour: r2(resteNet / joursRestants), joursRestants, depense: depenseMois, epargne: epargneMois, salaire: salaireRecu, surplus, repart: repartMois, fixes: fixesMois },
       compte, compte_min: compteMin,
       epargne: { livrets, pea, total: r2((livrets || 0) + (pea || 0)), livrets_date: Ep.livrets ? Ep.livrets.date : '', pea_date: Ep.pea ? Ep.pea.date : '', reserve },
