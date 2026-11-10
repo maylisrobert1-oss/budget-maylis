@@ -19,6 +19,7 @@ Ce fichier permet à quelqu'un (ou à Claude) de reprendre l'appli sans l'histor
 | `app.js` | Stockage local, sauvegarde chiffrée, import, feuilles (dialogues) et dessin de tous les écrans. |
 | `sw.js` | Service worker : réseau d'abord, cache en secours. **Incrémenter `VERSION` à chaque mise en ligne**, sinon l'iPhone peut garder l'ancienne version. |
 | `manifest.json`, `icons/` | Installation sur l'écran d'accueil. |
+| `tests/` | Tests du moteur sur des données inventées : ouvrir `tests/index.html` (ou `node tests/moteur.test.js`). À relancer avant chaque mise en ligne. |
 | `.gitignore` | Exclut `*.json` (sauf le manifeste), `*.csv`, `*.zip`, `.local/`, `.claude/`. Ne pas l'affaiblir. |
 
 `.local/` (ignoré par git) peut contenir, sur le poste du développeur, un relevé de test, une configuration de départ et une page `preparer.html` qui fabrique la sauvegarde initiale. Rien de ce dossier ne doit être poussé.
@@ -119,10 +120,11 @@ Servir le dossier avec un serveur statique, par exemple `python -m http.server 8
 
 ## Mettre en ligne
 
-1. Vérifier que rien de personnel n'est suivi par git (`git status`, puis chercher montants et noms avec `git grep`).
-2. Incrémenter `VERSION` dans `sw.js`.
-3. Commit (message en français) puis push sur `main`. GitHub Pages se met à jour seul.
-4. Sur l'iPhone : fermer complètement l'appli puis la rouvrir.
+1. Lancer les tests (`tests/index.html` en local) : tout doit être juste. Toute nouvelle règle de calcul reçoit son test, avec des données inventées.
+2. Vérifier que rien de personnel n'est suivi par git (`git status`, puis chercher montants et noms avec `git grep`).
+3. Incrémenter `VERSION` dans `sw.js`.
+4. Commit (message en français) puis push sur `main`. GitHub Pages se met à jour seul.
+5. Sur l'iPhone : fermer complètement l'appli puis la rouvrir.
 
 ## Façon de travailler avec la propriétaire
 

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tests du moteur</title>
+<style>
+  body { font: 15px/1.5 -apple-system, system-ui, sans-serif; margin: 24px auto; max-width: 720px; padding: 0 16px; }
+  h1 { font-size: 22px; }
+  #bilan { font-weight: 600; padding: 10px 14px; border-radius: 10px; }
+  #bilan.ok { background: #e6f6ea; color: #14642b; }
+  #bilan.ko { background: #fde8e8; color: #a11616; }
+  li.ok { color: #14642b; } li.ko { color: #a11616; font-weight: 600; }
+  h2 { font-size: 16px; margin: 20px 0 4px; }
+  ul { margin: 0; padding-left: 20px; }
+</style>
+</head>
+<body>
+<h1>Tests du moteur</h1>
+<p>Données inventées, aucun relevé réel. À relancer avant chaque mise en ligne.</p>
+<p id="bilan">En cours…</p>
+<div id="liste"></div>
+<script src="../moteur.js"></script>
+<script src="moteur.test.js"></script>
+</body>
+</html>
