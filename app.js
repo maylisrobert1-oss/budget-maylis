@@ -645,11 +645,11 @@
     const prec = M.moisDecale(c.mc, -1);
     const f = el('div');
     const seg = el('div', 'v-segment trois');
-    [['Ce mois-ci', c.mc], ['Mois dernier', prec], ['Tout', '']].forEach(([t, m]) => { const b = el('button', '', t); b.type = 'button'; b.setAttribute('aria-pressed', String(filtre.mois === m && !filtre.aClasser)); b.onclick = () => { Object.assign(filtre, { mois: m, aClasser: false, limite: 150 }); dessinerOps(); }; seg.append(b); });
+    [['Ce mois-ci', c.mc], ['Mois dernier', prec], ['Tout', '']].forEach(([t, m]) => { const b = el('button', '', t); b.type = 'button'; b.setAttribute('aria-pressed', String(filtre.mois === m && !filtre.aClasser)); b.onclick = () => { Object.assign(filtre, { mois: m, aClasser: false, limite: 150 }); dessinerOps(); window.scrollTo(0, 0); }; seg.append(b); });
     f.append(seg);
     const puces = el('div', 'v-filtres');
     if (filtre.poste) { const b = el('button', 'v-puce on'); b.type = 'button'; b.append(posteDe(filtre.poste).nom, dessin('croix', 14)); b.onclick = () => { filtre.poste = ''; dessinerOps(); }; puces.append(b); }
-    if (c.nc) { const b = el('button', 'v-puce' + (filtre.aClasser ? ' on' : ''), 'À classer · ' + c.nc); b.type = 'button'; b.onclick = () => { filtre.aClasser = !filtre.aClasser; if (filtre.aClasser) filtre.mois = ''; dessinerOps(); }; puces.append(b); }
+    if (c.nc) { const b = el('button', 'v-puce' + (filtre.aClasser ? ' on' : ''), 'À classer · ' + c.nc); b.type = 'button'; b.onclick = () => { filtre.aClasser = !filtre.aClasser; if (filtre.aClasser) filtre.mois = ''; dessinerOps(); window.scrollTo(0, 0); }; puces.append(b); }
     if (puces.childNodes.length) f.append(puces);
     $('v-ops-filtres').replaceChildren(f);
 
@@ -673,6 +673,9 @@
     if (l.length > filtre.limite) { const b = el('button', 'app-btn v-plus', 'Voir plus'); b.type = 'button'; b.onclick = () => { filtre.limite += 150; dessinerOps(); }; out.push(b); }
     $('v-ops').replaceChildren(...out);
     ajuster();
+    // Sur iPhone, une liste qui raccourcit alors que la page est défilée plus bas laisse Safari décalé : les feuilles qui s'ouvrent
+    // ne répondent plus au toucher (menu du poste). On ramène donc la page dans la liste.
+    const max = Math.max(0, document.documentElement.scrollHeight - innerHeight); if (window.scrollY > max) window.scrollTo(0, max);
   };
   // ========== Réglages : une ligne = un titre et une valeur, l'explication est dans la feuille ==========
   const etatSauvegarde = () => {
