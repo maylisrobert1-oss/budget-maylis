@@ -228,6 +228,55 @@
   const pret3 = M.projeter('pret', { montant: 10000, taux: 3, ans: 5 }, c);
   proche('prêt à 3 % sur 5 ans : mensualité', pret3.res.mensualite, 179.69);
 
+  dans('Épargne par mois');
+  const ep = M.epargneParMois(donnees());
+  egal('liste : juin prévu, puis mai, avril, mars', ep.mois.map((x) => x.cle + ' ' + x.etat).join(', '), '2026-06 prevu, 2026-05 termine, 2026-04 termine, 2026-03 termine');
+  const epM = (e, k) => e.mois.find((x) => x.cle === k);
+  proche('mai : revenus sans le revenu ponctuel', epM(ep, '2026-05').calcul.revenus, 2300);
+  proche('mai : à mettre de côté = 2300 − 620 − 390', epM(ep, '2026-05').a_mettre, 1290);
+  proche('mai : déjà viré', epM(ep, '2026-05').vire, 150);
+  proche('mai : reste à virer', epM(ep, '2026-05').reste, 1140);
+  proche('avril : dépenses rares comptées', epM(ep, '2026-04').a_mettre, 1040);
+  proche('mars : premier mois complet', epM(ep, '2026-03').a_mettre, 1160);
+  proche('à virer aujourd’hui = somme des restes des mois terminés', ep.a_virer, 1140 + 1040 + 1160);
+  proche('le mois en cours ne compte pas dans « à virer aujourd’hui »', ep.a_virer, M.epargneParMois(donnees()).mois.filter((x) => x.etat === 'termine').reduce((s, x) => s + x.reste, 0));
+  const plusOps = (l) => donnees({ operations: operations.concat(l) });
+  const epR = M.epargneParMois(plusOps([op('2026-05-25', 'VIR SEPA DEPUIS LIVRET A', 3000, 'epargne')]));
+  proche('un retrait de l’épargne ne réduit pas « déjà viré »', epM(epR, '2026-05').vire, 150);
+  proche('un retrait de l’épargne ne crée pas de reste à virer', epM(epR, '2026-05').reste, 1140);
+  proche('le retrait est montré à part', epM(epR, '2026-05').retraits, 3000);
+  const vRet = { id: 9001, date: '2026-06-18', libelle: 'VIR VIREMENT VERS LIVRET A', montant: -400, cat: '', poste: 'epargne', src: 'test' };
+  const epSans = M.epargneParMois(plusOps([vRet])), epAvec = M.epargneParMois(plusOps([Object.assign({}, vRet, { mois_epargne: '2026-04' })]));
+  proche('sans rattachement, un virement compte pour le mois de sa date', epM(epSans, '2026-06').vire, 400);
+  proche('rattaché à avril : il compte pour avril', epM(epAvec, '2026-04').vire, 400);
+  proche('rattaché à avril : il ne compte plus pour juin', epM(epAvec, '2026-06').vire, 0);
+  proche('rattaché à avril : le reste d’avril baisse', epM(epAvec, '2026-04').reste, 640);
+  proche('rattachement : le solde des livrets ne change pas', M.calculer(plusOps([Object.assign({}, vRet, { mois_epargne: '2026-04' })])).epargne.livrets, M.calculer(plusOps([vRet])).epargne.livrets);
+  const rc = M.reclasser(plusOps([vRet]), 9001, 'epargne', false, '2026-05');
+  egal('reclasser : le mois de rattachement est enregistré', rc.operations.find((o) => o.id === 9001).mois_epargne, '2026-05');
+  egal('reclasser vers un autre poste : le rattachement disparaît', M.reclasser(rc, 9001, 'courses', false).operations.find((o) => o.id === 9001).mois_epargne, undefined);
+  const b1 = M.importer(donnees({ operations: [] }), csv, 'export-operations-17-06-2026_10-00-00.csv').bundle, o1 = b1.operations[0];
+  const b2 = M.importer(M.reclasser(b1, o1.id, 'epargne', false, '2026-05'), csv, 'export-operations-17-06-2026_10-00-00.csv').bundle;
+  egal('un import garde le rattachement', (b2.operations.find((o) => o.id === o1.id) || {}).mois_epargne, '2026-05');
+  const epTard = M.epargneParMois(donnees({ export: '2026-07-09' }));
+  egal('juin devient terminé quand le relevé couvre son dernier jour', epM(epTard, '2026-06').etat, 'termine');
+  proche('un mois terminé ne change pas quand le relevé avance', epM(epTard, '2026-05').a_mettre, epM(ep, '2026-05').a_mettre);
+  const epNeg = M.epargneParMois(plusOps([op('2026-05-28', 'CARTE 27/05/26 GARAGE FICTIF CB*0000', -2000, 'achats')]));
+  egal('mois négatif : rien à virer', epM(epNeg, '2026-05').reste, 0);
+  egal('mois négatif : marqué', epM(epNeg, '2026-05').negatif, true);
+
+  dans('Affichage : euros entiers et noms courts');
+  egal('entiers : le total est l’arrondi de la somme', M.entiers([293.6, 394.6]).join('+'), '294+394');
+  egal('entiers : la somme des lignes vaut le total', somme(M.entiers([10.4, 20.4, 30.4, 0.4])), 62);
+  egal('entiers : des montants ronds ne bougent pas', M.entiers([610, 104, 82]).join(' '), '610 104 82');
+  egal('entiers : le plus gros reste est arrondi vers le haut', M.entiers([1.2, 1.7, 1.2]).join(' '), '1 2 1');
+  egal('entiers : montants négatifs', somme(M.entiers([-12.5, 40.2, -3.3])), 24);
+  egal('entiers : liste vide', M.entiers([]).length, 0);
+  egal('entiers : dépensé des postes du mois = arrondi du total', somme(M.entiers(c.variables.map((v) => v.depense))), Math.round(c.mois.depense));
+  egal('nom court : un nom qui tient est gardé', M.nomCourt('CARTE 03/06/26 BOULANGERIE FICTIVE CB*1234'), 'Boulangerie Fictive');
+  egal('nom court : des mots entiers, 20 caractères au plus', M.nomCourt('PRLV SEPA ASSURANCE FICTIVE MANAGEMENT EUROPE'), 'Assurance Fictive');
+  egal('nom court : un seul mot trop long est tronqué', M.nomCourt('CARTE 03/06/26 ABCDEFGHIJKLMNOPQRSTUVWXYZ CB*1234').length, 20);
+
   // ---------- Bilan ----------
   const ko = resultats.filter((r) => !r.ok);
   if (typeof document === 'undefined') {

@@ -26,11 +26,24 @@ Ce fichier permet à quelqu'un (ou à Claude) de reprendre l'appli sans l'histor
 
 ## Les écrans
 
-1. **Ce mois-ci** : budget non dépensé (ou ce qu'il reste à dépenser et par jour), jauge dépensé / budget, « À faire » (compte sous le minimum avant le loyer, mise de côté sous le minimum, opérations à classer), **À mettre de côté** (avec déjà viré / reste à virer), carte **Dépenses du mois** (sous-totaux), puis les postes Obligations, Plaisir, Dépenses rares, Charges fixes. Uniquement des euros, pas de pourcentages.
-2. **Projections** : 4 scénarios (congés sans solde, baisse de salaire, prêt étudiant, projet). Aucune question n'est obligatoire : une réponse vide est remplacée par une hypothèse affichée en bleu. Calculs sur la moyenne réelle.
-3. **Dans la durée** : épargne totale, réserve en mois de dépenses (conseillé : 3 mois), **repère 50 / 30 / 20** sur le réel (sélecteur moyenne / mois dernier), comptes d'épargne, crédit voiture.
-4. **Opérations** : recherche, filtres ce mois-ci / mois dernier / tout, « à classer », reclassement d'une opération par une feuille (option « toujours classer ce marchand ici »).
-5. **Réglages** : uniquement ce qu'on modifie (revenus, début du mois, budget par poste, charges fixes, épargne min / objectif, minimum sur le compte, crédit, règles, sauvegarde, import). Pas de chiffres d'analyse sur cette page.
+Cinq onglets, une question chacun. Un écran porte un seul grand chiffre ; le détail s'ouvre en touchant une ligne (page poussée).
+
+1. **Ce mois-ci** (combien je peux encore dépenser) : budget qui reste et par jour, ou « Mois terminé · budget non dépensé » avec le bouton pour importer le relevé suivant. Alerte « opérations à classer ». Puis « Où tu en es » : quatre groupes (Obligations, Plaisir, Dépenses rares, Charges fixes), chacun ouvre sa page de détail. Uniquement des euros.
+2. **Épargne** (combien dois-je virer aujourd'hui) : « À virer aujourd'hui » = somme des restes à virer des 3 derniers mois terminés. Puis « Mois par mois » : le mois en cours (gris, prévu) et les 3 derniers mois terminés ; chaque mois ouvre son calcul, ses virements comptés et ses retraits. Puis **Et si…** (4 projections ; une réponse vide est remplacée par une hypothèse affichée en bleu).
+3. **Patrimoine** (ce que j'ai et dois) : valeur nette = livrets + PEA − crédit voiture, puis les comptes, chacun modifiable.
+4. **Opérations** : recherche, filtres ce mois-ci / mois dernier / tout, « à classer », reclassement par une feuille (option « toujours classer ce marchand ici » ; pour un virement d'épargne, « Compte pour » un autre mois de la liste).
+5. **Réglages** : « Mon budget d'un mois normal » lu comme un calcul (revenus − charges fixes − obligations − plaisir − dépenses rares = épargne prévue ; chaque ligne ouvre ses montants), « Ma répartition 50 / 30 / 20 », objectif d'épargne, puis « Mes données » (import, sauvegarde, règles).
+
+Un point rouge sur l'onglet Épargne signale un mois terminé avec un reste à virer ; un point orange sur Réglages, une sauvegarde à faire.
+
+## Règles d'affichage (à respecter)
+
+- **Une seule lecture de ligne** : dépensé sur budget à gauche, ce qu'il reste à droite (« restants » ou « de trop »).
+- **Un total affiché est la somme des lignes affichées.** Les écrans passent par `vueMois()` (`app.js`) et `Moteur.entiers()` : euros entiers dont la somme tombe juste. Ne pas arrondir un total à part.
+- **Rien n'est coupé** : `ajuster()` raccourcit un nom d'opération mot par mot (`Moteur.nomCourt`, le libellé complet reste dans la fiche) et rétrécit un autre titre trop long. Les sous-titres tiennent sur une ligne : les garder courts.
+- **Zones à toucher d'au moins 44 px** (boutons, segments, champs).
+- **Avant d'ajouter une fonction**, décider dans quel onglet elle va et ce qu'elle remplace ; ne pas l'empiler en bas d'un écran.
+- Vérifier à 375 px de large : aucun texte coupé, aucune ligne sur deux lignes, aucun débordement.
 
 ## Vocabulaire (à respecter dans l'interface)
 
@@ -47,7 +60,7 @@ Ce fichier permet à quelqu'un (ou à Claude) de reprendre l'appli sans l'histor
   format: 'budget-maylis', version: 1,
   reglages: {
     salaire_ref, aides: [{ id, nom, montant }], jour_debut,      // jour de paie : le mois va de ce jour au jour d'avant
-    epargne_min, epargne_obj, compte_min,                         // fractions (0,1 = 10 %) et euros
+    epargne_min, epargne_obj, compte_min,                         // fractions (0,1 = 10 %) et euros ; compte_min n'est plus affiché
     objectifs_depuis: 'AAAA-MM', fenetre: 12,                    // fenêtre de la moyenne glissante
     revenus_depuis: 'AAAA-MM'                                    // facultatif : mois où les revenus ont changé (voir « Base des pourcentages »)
   },
@@ -59,7 +72,7 @@ Ce fichier permet à quelqu'un (ou à Claude) de reprendre l'appli sans l'histor
   credit: { nom, poste, mensualite, premiere: 'AAAA-MM', nb },
   regles: [{ motif, sens, min, max, cat, poste }],   // règles de classement de la propriétaire (expressions régulières sur le libellé)
   regles_perso: [{ marchand, poste }],                 // créées par « toujours classer ce marchand ici »
-  operations: [{ id, date, libelle, montant, cat, poste, src }],
+  operations: [{ id, date, libelle, montant, cat, poste, src, mois_epargne }],   // mois_epargne : facultatif, mois pour lequel compte un virement d'épargne
   soldes: { 'AAAA-MM-JJ': solde },
   export, migrations: [], modifie_le, sauvegarde_le
 }
@@ -96,8 +109,9 @@ Un import ne reclasse jamais une opération déjà connue (clé date + libellé 
 - **Revenus du mois** : ce qui est vraiment arrivé (salaire, aides, CAF), et tant que la paie ou l'aide n'est pas arrivée, le montant de référence.
 - **À mettre de côté** = revenus du mois − charges fixes − dépenses des postes − dépenses rares. Pendant le mois, le budget non dépensé compte au prorata des jours restants ; le dernier jour, c'est le réel exact. Il doit correspondre à la variation du compte courant, plus les virements vers l'épargne.
 - **Reste / budget non dépensé** = budget total − tout le dépensé (un dépassement sur un poste réduit le reste).
-- **Réel moyen et mois dernier** (`repartition`) : mêmes mois que les budgets, mêmes exclusions. La réserve et « Dans la durée » partent de cette moyenne réelle. Les projections prennent les dépenses réelles moyennes et la base des revenus (donc `revenus_depuis` s'il est réglé).
-- **Épargne (comptes)** : valeur saisie à une date, puis virements vus sur le compte courant. Les livrets sont regroupés (les virements ne disent pas lequel).
+- **Réel moyen et mois dernier** (`repartition`) : mêmes mois que les budgets, mêmes exclusions. La réserve et « Ma répartition » partent de cette moyenne réelle. Les projections prennent les dépenses réelles moyennes et la base des revenus (donc `revenus_depuis` s'il est réglé).
+- **Épargne par mois** (`epargneParMois`) : le mois en cours s'il n'est pas terminé, puis les 3 derniers mois terminés. Un mois est terminé dès que le relevé couvre son dernier jour ; il est alors recalculé sur les opérations jusqu'à cette date, donc définitif. « Déjà viré » = les envois vers l'épargne rattachés au mois (`mois_epargne`, sinon le mois budgétaire de sa date). Les retraits ne comptent pas (montrés à part). Reste à virer = à mettre de côté − déjà viré, jamais négatif. Un mois négatif n'a rien à virer ; rien ne se reporte.
+- **Épargne (comptes)** : valeur saisie à une date, puis virements vus sur le compte courant (envois et retraits, à leur date réelle). Les livrets sont regroupés (les virements ne disent pas lequel).
 
 Après toute modification de calcul, vérifier la cohérence entre les pages : recalculer à partir des opérations brutes (somme par mois et par famille) et comparer à ce que chaque écran affiche (dépensé, budget, reste, à mettre de côté, moyenne réelle, mois dernier, réserve, projections, totaux d'Opérations).
 
@@ -131,6 +145,6 @@ Servir le dossier avec un serveur statique, par exemple `python -m http.server 8
 
 - Montrer une maquette ou des captures (largeur iPhone) et attendre son accord avant de construire ou de mettre en ligne.
 - Style natif iOS : listes groupées, carrés d'icône colorés, feuilles qui montent du bas, barre d'onglets en verre. Pas de tableaux type tableur.
-- Pourcentages réservés à Réglages (budget par poste) et à Dans la durée (repère). Ce mois-ci reste en euros.
+- Pourcentages réservés à Réglages (budget par poste, répartition, objectif) et aux projections. Ce mois-ci reste en euros.
 - Chaque chiffre affiché doit dire ce qu'il est (réel ou budget) et tomber juste avec les autres pages.
 - Pas de conseil d'investissement personnalisé : donner les faits et les ordres de grandeur, elle décide.

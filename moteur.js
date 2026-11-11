@@ -116,6 +116,21 @@
     t = t.replace(/^\*/, '').replace(/ \d+$/, '').replace(/\s{2,}/g, ' ');
     return t.toLowerCase().replace(/(^|[\s\-'’.*(])([a-zà-ÿ])/g, (a, b, c) => b + c.toUpperCase()).slice(0, 40);
   }
+  // Nom court pour les listes : des mots entiers, 20 caractères au plus
+  function nomCourt(lib, max) {
+    const n = max || 20, mots = nomLisible(lib).split(' ');
+    let s = mots[0].slice(0, n);
+    for (let i = 1; i < mots.length && (s + ' ' + mots[i]).length <= n; i++) s += ' ' + mots[i];
+    return s;
+  }
+  // Euros entiers dont la somme tombe juste : le total est l'arrondi de la somme, l'écart va aux plus grosses décimales
+  function entiers(vals) {
+    const bas = vals.map((x) => Math.floor(x + 1e-9));
+    let manque = Math.round(vals.reduce((s, x) => s + x, 0)) - bas.reduce((s, x) => s + x, 0);
+    const ordre = vals.map((x, i) => [x - bas[i], i]).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+    for (let k = 0; manque > 0 && k < ordre.length; k++, manque--) bas[ordre[k][1]]++;
+    return bas;
+  }
   // Date d'achat lue dans le libellé carte (le débit arrive souvent un ou deux jours après)
   function dateAchat(o) {
     const m = norm(o.libelle).match(/^(?:CARTE|AVOIR|RETRAIT DAB) (\d\d)\/(\d\d)\/(\d\d)/i);
@@ -243,10 +258,12 @@
   }
 
   // Reclassement manuel ; avec `toutes`, mémorise le marchand et reclasse ses opérations à classer
-  function reclasser(bundle, id, poste, toutes) {
+  // moisEpargne : pour un virement d'épargne, le mois pour lequel il compte ('AAAA-MM') ; vide = le mois de sa date
+  function reclasser(bundle, id, poste, toutes, moisEpargne) {
     const ops = bundle.operations.map((o) => Object.assign({}, o));
     const o = ops.find((x) => String(x.id) === String(id)); if (!o) return bundle;
     Object.assign(o, { poste, src: 'manuel' });
+    if (poste === 'epargne' && moisEpargne) o.mois_epargne = moisEpargne; else delete o.mois_epargne;
     let perso = (bundle.regles_perso || []).slice();
     if (toutes) {
       const k = marchand(o.libelle);
@@ -447,15 +464,55 @@
     }
 
     const nc = ops.filter((o) => o.poste === 'non_classe').length;
+    const vireMc = envoisDu(ops, mc);
     return {
       mc, mois_mc: moisLabel(mc), debut, fin, nbJours, ecoules, exp, j0,
       revenus_ref: revenusRef, revenus_base: revBase, revenus_depuis: R.revenus_depuis || '', mois_revenus: moisRev, salaire_ref: Number(R.salaire_ref) || 0, reel, dernier, base, fixes, variables, enveloppes, plan,
-      mois: { revenus: revMois, vire: r2(dep(mc, 'epargne')), reste_a_virer: r2(Math.max(0, epargneMois - dep(mc, 'epargne'))), reste: resteNet, par_jour: r2(resteNet / joursRestants), joursRestants, depense: depenseMois, epargne: epargneMois, salaire: salaireRecu, surplus, repart: repartMois, fixes: fixesMois },
+      mois: { revenus: revMois, vire: vireMc, reste_a_virer: r2(Math.max(0, epargneMois - vireMc)), postes: varMois, rares: envMois, reste: resteNet, par_jour: r2(resteNet / joursRestants), joursRestants, depense: depenseMois, epargne: epargneMois, salaire: salaireRecu, surplus, repart: repartMois, fixes: fixesMois },
       compte, compte_min: compteMin,
       epargne: { livrets, pea, total: r2((livrets || 0) + (pea || 0)), livrets_date: Ep.livrets ? Ep.livrets.date : '', pea_date: Ep.pea ? Ep.pea.date : '', reserve },
       credit, nc, epargne_min: Number(R.epargne_min) || 0.1, epargne_obj: Number(R.epargne_obj) || 0.2,
       objectifs_depuis: R.objectifs_depuis || '', operations: ops
     };
+  }
+
+  // ---------- Épargne par mois ----------
+  // Un virement d'épargne compte pour son mois de rattachement (mois_epargne), sinon pour le mois budgétaire de sa date.
+  // « Déjà viré » ne compte que les envois vers l'épargne : un retrait (ex. pour un achat hors budget) ne crée pas de reste à virer.
+  const moisVirement = (o) => o.mois_epargne || o.mois;
+  function envoisDu(ops, m) {
+    return r2(-ops.filter((o) => o.poste === 'epargne' && Number(o.montant) < 0 && moisVirement(o) === m).reduce((s, o) => s + Number(o.montant), 0));
+  }
+  // Le mois en cours s'il n'est pas terminé (prévision), puis les 3 derniers mois terminés (réels).
+  // Un mois est terminé dès que le relevé couvre son dernier jour ; il n'est listé que si les opérations commencent à son début.
+  function epargneParMois(bundle, c) {
+    c = c || calculer(bundle);
+    const ops = c.operations, j0 = c.j0, fini = c.ecoules >= c.nbJours;
+    const premiere = (bundle.operations || []).reduce((m, o) => (o.date < m ? o.date : m), '9999-99-99');
+    const ligne = (m, cc, etat) => {
+      const a = cc.mois.epargne, vire = envoisDu(ops, m);
+      return {
+        cle: m, libelle: moisLabel(m), etat, debut: debutMois(m, j0), fin: finMois(m, j0),
+        calcul: { revenus: cc.mois.revenus, fixes: cc.mois.fixes, postes: cc.mois.postes, rares: cc.mois.rares },
+        a_mettre: a, vire, reste: r2(Math.max(0, a - vire)), negatif: a < 0,
+        retraits: r2(ops.filter((o) => o.poste === 'epargne' && Number(o.montant) > 0 && o.mois === m).reduce((s, o) => s + Number(o.montant), 0)),
+        virements: ops.filter((o) => o.poste === 'epargne' && Number(o.montant) < 0 && moisVirement(o) === m).map((o) => o.id),
+        rattaches: ops.filter((o) => o.poste === 'epargne' && o.mois_epargne === m).map((o) => o.id),
+        revenus_mois: cc.mois.revenus
+      };
+    };
+    const liste = [];
+    if (!fini) liste.push(ligne(c.mc, c, 'prevu'));
+    for (let k = fini ? 0 : 1, n = 0; n < 3; k++, n++) {
+      const m = moisDecale(c.mc, -k);
+      if (premiere > debutMois(m, j0)) break;
+      if (k === 0) { liste.push(ligne(m, c, 'termine')); continue; }
+      const f = finMois(m, j0);
+      const cc = calculer(Object.assign({}, bundle, { operations: (bundle.operations || []).filter((o) => o.date <= f), export: f, soldes: {} }));
+      liste.push(ligne(m, cc, 'termine'));
+    }
+    const termines = liste.filter((x) => x.etat === 'termine');
+    return { mois: liste, a_virer: r2(termines.reduce((s, x) => s + x.reste, 0)) };
   }
 
   // ---------- Projections (questions facultatives : ce qui manque prend une hypothèse) ----------
@@ -573,6 +630,6 @@
     return faites.size === (bundle.migrations || []).length ? bundle : Object.assign({}, b, { migrations: [...faites] });
   }
 
-  const api = { migrer, lireExport, importer, reclasser, calculer, projeter, lireZip, catalogue, marchand, nomLisible, dateAchat, moisDe, moisLabel, moisDecale, dateCourte, frDate, FAMILLES, VARIABLES, ENVELOPPES };
+  const api = { migrer, lireExport, importer, reclasser, calculer, projeter, lireZip, catalogue, marchand, nomLisible, nomCourt, entiers, epargneParMois, dateAchat, moisDe, moisLabel, moisDecale, dateCourte, frDate, FAMILLES, VARIABLES, ENVELOPPES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.Moteur = api;
 })(typeof window !== 'undefined' ? window : globalThis);
